@@ -1,0 +1,14 @@
+variable "name_prefix" { type = string }
+variable "cluster_name" { type = string }
+variable "service_name" { type = string }
+variable "task_family" { type = string }
+variable "image" { type = string }
+variable "container_name" { type = string }
+variable "desired_count" { type = number }
+variable "task_execution_role_arn" { type = string }
+variable "task_role_arn" { type = string }
+variable "log_group_name" { type = string }
+variable "aws_region" { type = string }
+variable "target_group_arn" { type = string }
+variable "task_subnet_ids" { type = list(string) }
+variable "task_security_group_id" { type = string }

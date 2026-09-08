@@ -1,0 +1,42 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    commands:
+      - echo "Installing build prerequisites"
+      - java -version
+      - mvn -version
+      - docker --version
+  pre_build:
+    commands:
+      - export RELEASE_FILE="targets/ecs/release/APP_VERSION"
+      - test -f "$RELEASE_FILE"
+      - export APP_VERSION="$(tr -d '\r\n' < "$RELEASE_FILE")"
+      - test -n "$APP_VERSION"
+      - export IMAGE_TAG="$APP_VERSION"
+      - export AWS_ENDPOINT_ARGS=""
+      - if [ -n "${AWS_ENDPOINT_URL:-}" ]; then export AWS_ENDPOINT_ARGS="--endpoint-url $AWS_ENDPOINT_URL"; fi
+      - export ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text $AWS_ENDPOINT_ARGS)"
+      - export ECR_REGISTRY="$(printf '%s' "$ECR_REPOSITORY_URI" | cut -d/ -f1)"
+      - export IMAGE_URI="$ECR_REPOSITORY_URI:$IMAGE_TAG"
+      - echo "Building $IMAGE_URI for release $APP_VERSION"
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" $AWS_ENDPOINT_ARGS | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+  build:
+    commands:
+      - cd targets/ecs/app
+      - mvn -B test
+      - mvn -B package -DskipTests
+      - docker build --pull=false --build-arg APP_VERSION="$APP_VERSION" --tag "$IMAGE_URI" .
+      - docker push "$IMAGE_URI"
+      - cd ../../..
+  post_build:
+    commands:
+      - printf '[{"name":"ecs-platform-demo","imageUri":"%s"}]' "$IMAGE_URI" > imagedefinitions.json
+      - cat imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json

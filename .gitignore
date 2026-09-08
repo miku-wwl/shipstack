@@ -1,0 +1,9 @@
+.local/
+**/.terraform/
+**/.terraform.lock.hcl
+**/localstack_providers_override.tf
+**/*.tfstate
+**/*.tfstate.*
+**/target/
+*.zip
+tmp/

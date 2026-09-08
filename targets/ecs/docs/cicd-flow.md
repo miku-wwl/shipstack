@@ -1,0 +1,13 @@
+# CI/CD 流程
+
+`package-source.ps1` 创建一个确定性的压缩包，其中包含仓库内容以及位于
+`targets/ecs/release/APP_VERSION` 的 release manifest。压缩包会上传到目标 artifact
+bucket。
+
+CodePipeline V1 读取该 S3 对象，将 source artifact 传递给 CodeBuild，并接收包含
+`imagedefinitions.json` 的 build artifact。CodeBuild 执行 Maven 测试和打包，构建
+Docker 镜像，登录 LocalStack ECR，并推送不可变的 release tag。
+
+ECS standard deploy action 读取 image definition，注册新的 task definition revision，
+并更新 ECS service。ECS 替换任务；ALB health check 使用 `/actuator/health`。应用
+标准输出通过 `awslogs` driver 传递到 CloudWatch Logs。
