@@ -10,5 +10,8 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 10
 }
 if (-not $events -or $events.events.Count -lt 1) { throw "No CloudWatch Logs events found in $group." }
+$requestLog = @($events.events | Where-Object { [string]$_.message -match 'request method=' }) | Select-Object -First 1
+if (-not $requestLog) { throw "CloudWatch Logs exist in $group, but no RequestLoggingFilter event was found." }
 Write-Host "CLOUDWATCH_LOG_GROUP=$group"
 Write-Host "CLOUDWATCH_EVENT_COUNT=$($events.events.Count)"
+Write-Host "CLOUDWATCH_LOG_SAMPLE=$($requestLog.message)"

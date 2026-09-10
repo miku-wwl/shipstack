@@ -5,6 +5,7 @@ $script:TargetRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:RepoRoot = (Resolve-Path (Join-Path $script:TargetRoot '..\..')).Path
 $script:InfraRoot = Join-Path $script:TargetRoot 'infra'
 $script:LocalDir = Join-Path $script:TargetRoot '.local'
+$script:ReleaseStatePath = Join-Path $script:LocalDir 'last-known-good.json'
 $script:Endpoint = 'http://localhost:4567'
 $script:Region = 'us-east-1'
 
@@ -47,3 +48,39 @@ function Get-InfraOutput {
 }
 
 function Ensure-LocalDirectory { if (-not (Test-Path $script:LocalDir)) { New-Item -ItemType Directory -Path $script:LocalDir | Out-Null } }
+
+function Save-LastKnownGoodRelease {
+    param(
+        [Parameter(Mandatory)][string]$ReleaseVersion,
+        [Parameter(Mandatory)][string]$TaskDefinitionArn,
+        [Parameter(Mandatory)][string]$ImageUri,
+        [Parameter(Mandatory)][string]$ImageDigest
+    )
+
+    Ensure-LocalDirectory
+    $state = [ordered]@{
+        releaseVersion     = $ReleaseVersion
+        taskDefinitionArn  = $TaskDefinitionArn
+        imageUri           = $ImageUri
+        imageDigest        = $ImageDigest
+        recordedAtUtc      = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($script:ReleaseStatePath, ($state | ConvertTo-Json -Depth 5), $utf8NoBom)
+    Write-Host "LAST_KNOWN_GOOD=$ReleaseVersion taskDefinition=$TaskDefinitionArn imageDigest=$ImageDigest"
+}
+
+function Get-LastKnownGoodRelease {
+    if (-not (Test-Path -LiteralPath $script:ReleaseStatePath)) { return $null }
+    try {
+        $state = Get-Content -Raw -LiteralPath $script:ReleaseStatePath | ConvertFrom-Json
+    } catch {
+        throw "Last-known-good release state is invalid at $($script:ReleaseStatePath): $($_.Exception.Message)"
+    }
+    foreach ($property in @('releaseVersion', 'taskDefinitionArn', 'imageUri', 'imageDigest')) {
+        if ([string]::IsNullOrWhiteSpace([string]$state.$property)) {
+            throw "Last-known-good release state is missing '$property': $($script:ReleaseStatePath)"
+        }
+    }
+    return $state
+}

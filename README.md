@@ -18,8 +18,9 @@ EKS 或 Lambda 等部署目标将作为 `targets/` 下的并列目录添加；�
 
 ## 快速开始
 
-LocalStack 必须已经运行在 `http://localhost:4566`，并且 Docker 可用。下面的命令
-会显式指定 LocalStack endpoint。
+Docker 必须可用。运行目标脚本时，它会复用已有 LocalStack 镜像并启动或使用项目专用
+的 `shipstack-ecs-localstack` 容器，宿主机 endpoint 为 `http://localhost:4567`；脚本
+会显式指定该 endpoint，不会调用真实 AWS。
 
 ```powershell
 make ecs-test

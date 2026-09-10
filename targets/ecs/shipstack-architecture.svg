@@ -129,7 +129,7 @@
     <rect x="430" y="447" width="235" height="205" rx="16" fill="#f7fbfc" stroke="#6daabd" stroke-width="2"/>
     <text x="454" y="478" class="font boxTitle">ECS Tasks × 2</text>
     <rect x="454" y="500" width="187" height="55" rx="10" fill="url(#blueBox)" stroke="#25809e"/>
-    <text x="474" y="523" class="font boxText">task :11（当前）</text>
+    <text x="474" y="523" class="font boxText">task：当前发布版本</text>
     <text x="474" y="543" class="font mono">image: ...:v1</text>
     <rect x="454" y="568" width="187" height="55" rx="10" fill="url(#blueBox)" stroke="#25809e"/>
     <text x="474" y="591" class="font boxText">container port 8080</text>
@@ -226,5 +226,5 @@
   <text x="1102" y="177" class="font small">④ run-pipeline v2  ⑤ rollback  ⑥ validate-logs</text>
 
   <text x="80" y="1080" class="font small">Shipstack · ECS Target · LocalStack 本地学习架构图</text>
-  <text x="1485" y="1080" text-anchor="end" class="font small">当前回滚状态：v1 · desired=2 · running=2</text>
+  <text x="1485" y="1080" text-anchor="end" class="font small">当前回滚状态：v1 · LKG ARN 已记录</text>
 </svg>

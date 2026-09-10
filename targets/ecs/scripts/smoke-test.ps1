@@ -8,15 +8,21 @@ $endpoint = $endpoint.TrimEnd('/')
 if ($endpoint -notmatch ':[0-9]+$') { $endpoint = "$endpoint`:4567" }
 $deadline = (Get-Date).AddMinutes(5)
 $responses = @{}
+$lastError = ''
 while ((Get-Date) -lt $deadline) {
     try {
         $responses.hello = Invoke-RestMethod "$endpoint/api/v1/hello" -TimeoutSec 10
         $responses.version = Invoke-RestMethod "$endpoint/api/v1/version" -TimeoutSec 10
         $responses.health = Invoke-RestMethod "$endpoint/actuator/health" -TimeoutSec 10
         if ($responses.health.status -eq 'UP') { break }
-    } catch { Start-Sleep -Seconds 10 }
+    } catch {
+        $lastError = $_.Exception.Message
+        Start-Sleep -Seconds 10
+    }
 }
-if (-not $responses.health -or $responses.health.status -ne 'UP') { throw "ALB smoke test did not reach a healthy application: $endpoint" }
+if (-not $responses.health -or $responses.health.status -ne 'UP') {
+    throw "ALB smoke test did not reach a healthy application: $endpoint. Last error: $lastError"
+}
 if ($ExpectedVersion -and $responses.version.version -ne $ExpectedVersion) { throw "Expected version '$ExpectedVersion', got '$($responses.version.version)'." }
 Write-Host "ALB_ENDPOINT=$endpoint"
 Write-Host "HELLO_RESPONSE=$($responses.hello | ConvertTo-Json -Compress)"

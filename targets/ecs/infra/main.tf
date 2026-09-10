@@ -15,19 +15,20 @@ module "ecr" {
 module "logging" {
   source = "./modules/logging"
 
-  log_group_name = local.log_group_name
+  log_group_name           = local.log_group_name
+  codebuild_log_group_name = local.codebuild_log_group_name
 }
 
 module "iam" {
   source = "./modules/iam"
 
   name_prefix             = local.name_prefix
-  aws_region              = var.aws_region
-  account_id              = data.aws_caller_identity.current.account_id
   artifact_bucket_arn     = aws_s3_bucket.artifacts.arn
   codebuild_project_arn   = "arn:aws:codebuild:${var.aws_region}:${data.aws_caller_identity.current.account_id}:project/${local.codebuild_name}"
+  codebuild_log_group_arn = module.logging.codebuild_log_group_arn
   ecr_repository_arn      = module.ecr.repository_arn
   log_group_arn           = module.logging.log_group_arn
+  ecs_service_arn         = local.ecs_service_arn
   task_execution_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.name_prefix}-ecs-task-execution"
   task_role_arn           = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.name_prefix}-ecs-task"
 }
@@ -75,13 +76,15 @@ resource "aws_s3_bucket_versioning" "artifacts" {
 module "codebuild" {
   source = "./modules/codebuild"
 
-  name_prefix        = local.name_prefix
-  project_name       = local.codebuild_name
-  service_role_arn   = module.iam.codebuild_role_arn
-  aws_region         = var.aws_region
-  codebuild_image    = var.codebuild_image
-  ecr_repository     = local.ecr_repository
-  ecr_repository_uri = local.ecr_repository_uri
+  name_prefix              = local.name_prefix
+  project_name             = local.codebuild_name
+  service_role_arn         = module.iam.codebuild_role_arn
+  aws_region               = var.aws_region
+  codebuild_image          = var.codebuild_image
+  container_name           = "ecs-platform-demo"
+  codebuild_log_group_name = local.codebuild_log_group_name
+  ecr_repository           = local.ecr_repository
+  ecr_repository_uri       = local.ecr_repository_uri
   environment_variables = var.codebuild_aws_endpoint == null ? {} : {
     AWS_ENDPOINT_URL = var.codebuild_aws_endpoint
   }

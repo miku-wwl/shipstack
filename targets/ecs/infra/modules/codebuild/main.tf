@@ -34,6 +34,11 @@ resource "aws_codebuild_project" "this" {
       value = var.ecr_repository_uri
       type  = "PLAINTEXT"
     }
+    environment_variable {
+      name  = "ECS_CONTAINER_NAME"
+      value = var.container_name
+      type  = "PLAINTEXT"
+    }
     dynamic "environment_variable" {
       for_each = var.environment_variables
       content {
@@ -46,7 +51,7 @@ resource "aws_codebuild_project" "this" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "/aws/codebuild/${var.name_prefix}"
+      group_name  = var.codebuild_log_group_name
       stream_name = "build"
       status      = "ENABLED"
     }

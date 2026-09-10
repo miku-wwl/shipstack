@@ -17,26 +17,28 @@ phases:
       - export APP_VERSION="$(tr -d '\r\n' < "$RELEASE_FILE")"
       - test -n "$APP_VERSION"
       - export IMAGE_TAG="$APP_VERSION"
-      - export AWS_ENDPOINT_ARGS=""
-      - if [ -n "${AWS_ENDPOINT_URL:-}" ]; then export AWS_ENDPOINT_ARGS="--endpoint-url $AWS_ENDPOINT_URL"; fi
-      - export ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text $AWS_ENDPOINT_ARGS)"
       - export ECR_REGISTRY="$(printf '%s' "$ECR_REPOSITORY_URI" | cut -d/ -f1)"
       - export IMAGE_URI="$ECR_REPOSITORY_URI:$IMAGE_TAG"
       - echo "Building $IMAGE_URI for release $APP_VERSION"
-      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" $AWS_ENDPOINT_ARGS | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+      - if [ -n "${AWS_ENDPOINT_URL:-}" ]; then aws sts get-caller-identity --query Account --output text --endpoint-url "$AWS_ENDPOINT_URL"; else aws sts get-caller-identity --query Account --output text; fi
+      - if [ -n "${AWS_ENDPOINT_URL:-}" ]; then aws ecr get-login-password --region "$AWS_DEFAULT_REGION" --endpoint-url "$AWS_ENDPOINT_URL" | docker login --username AWS --password-stdin "$ECR_REGISTRY"; else aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"; fi
   build:
     commands:
       - cd targets/ecs/app
-      - mvn -B test
-      - mvn -B package -DskipTests
+      - mvn -B package
       - docker build --pull=false --build-arg APP_VERSION="$APP_VERSION" --tag "$IMAGE_URI" .
       - docker push "$IMAGE_URI"
       - cd ../../..
   post_build:
     commands:
-      - printf '[{"name":"ecs-platform-demo","imageUri":"%s"}]' "$IMAGE_URI" > imagedefinitions.json
+      - if [ -n "${AWS_ENDPOINT_URL:-}" ]; then export IMAGE_DIGEST="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text --endpoint-url "$AWS_ENDPOINT_URL")"; else export IMAGE_DIGEST="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)"; fi
+      - test -n "$IMAGE_DIGEST" && test "$IMAGE_DIGEST" != "None"
+      - printf '[{"name":"%s","imageUri":"%s"}]' "$ECS_CONTAINER_NAME" "$IMAGE_URI" > imagedefinitions.json
+      - printf '{"releaseVersion":"%s","imageUri":"%s","imageDigest":"%s"}\n' "$APP_VERSION" "$IMAGE_URI" "$IMAGE_DIGEST" > release-metadata.json
       - cat imagedefinitions.json
+      - cat release-metadata.json
 
 artifacts:
   files:
     - imagedefinitions.json
+    - release-metadata.json

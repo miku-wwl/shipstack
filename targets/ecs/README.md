@@ -18,7 +18,7 @@ Spring Boot stdout -> awslogs -> CloudWatch Logs
 
 ## 前置条件
 
-- LocalStack Ultimate 运行在 `http://localhost:4566`
+- Docker 可访问，并允许项目脚本使用 `http://localhost:4567`
 - Docker Desktop 正在运行
 - Java 21（应用使用 Java 17 也可以）
 - Maven 和 Terraform 已加入 PATH
@@ -47,8 +47,16 @@ make ecs-local-e2e
 make ecs-rollback
 ```
 
-完整 E2E 会运行 Release 1（`v1`）、Release 2（`v2`），执行 HTTP 和日志检查，
-然后回滚到上一个健康的 ECS task-definition revision。
+完整 E2E 会运行初始 release（默认 `v1`）、候选 release（默认 `v2`），执行 HTTP 和
+日志检查，将初始 release 记录为 last-known-good，然后回滚到记录中的 task definition。
+它不会假设“当前 revision 减一”就是正确的回滚目标。
+
+正常发布完成并通过验证后，可以显式记录当前版本：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/mark-last-known-good.ps1 -ExpectedVersion v2
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/rollback.ps1
+```
 
 ## Qualification 边界
 

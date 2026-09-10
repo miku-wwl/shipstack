@@ -15,3 +15,17 @@ image 替换该 task definition。
 本地 source bucket 有意使用 S3 source action，而不是 GitHub-connected action。这样
 可以保持 E2E qualification 的确定性，同时为未来改用 CodeConnections 保留清晰的
 source-stage 边界。
+
+当前 LocalStack 拓扑只创建 public subnets：ALB 和 ECS/Fargate tasks 都在 public
+subnets，task 使用 public IP。这是本地学习环境的有意选择；未使用的 private subnet、
+private route table 和 NAT 没有被创建。迁移到真实 AWS 时，再由环境配置引入 private
+tasks、NAT Gateway 或 VPC endpoints。
+
+Terraform 拥有网络、IAM、ECR、ECS service 配置、ALB、CodeBuild、CodePipeline、日志组
+和 bootstrap task definition。CodePipeline 拥有发布时的 application image、task
+definition revision 和 active release；因此 ECS service 对 `task_definition` 使用
+`lifecycle.ignore_changes`，避免 Terraform apply 把成功部署恢复成 bootstrap。
+
+ECS 应用 release 的 last-known-good 状态保存在本地 `.local/last-known-good.json`，由
+`mark-last-known-good.ps1` 写入，`rollback.ps1` 读取其中的 release version、image
+digest 和 task definition ARN。它适合单机学习实验，不是跨机器的生产发布数据库。
