@@ -4,9 +4,9 @@
 
 - 这次证据来自 LocalStack，不等价于真实 AWS 中的 CodePipeline、ECS、ALB、IAM 或 CloudWatch qualification。
 - `.local/last-known-good.json` 是本地实验状态文件，不是生产环境的发布登记库；生产环境需要受保护、可审计的 release metadata 存储。
-- LocalStack 的滚动替换可能短时间显示 `runningCount` 大于 `desiredCount`；验证脚本因此要求至少达到 desired count，并同时检查任务健康状态。
+- LocalStack 的滚动替换可能短时间显示 `runningCount` 大于 `desiredCount`；Runbook 因此要求至少达到 desired count，并同时检查任务健康状态。
 - `targets/ecs/app/src/test` 已按学习范围删除，所以 Maven 构建通过不代表当前拥有有效的单元测试覆盖率。
-- 当前 Windows 环境没有 `/bin/bash`，仓库中的 Bash 脚本语法检查尚未完成。
+- 本地 Runbook 以 PowerShell 为主；CodeBuild 内部仍按 AWS buildspec 的 Bash shell 执行，宿主机不需要安装 Bash。
 
 ## 下一里程碑
 

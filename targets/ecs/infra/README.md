@@ -4,9 +4,9 @@ root module 组合了 network、ECR、ECS、ALB、IAM、logging、CodeBuild 和 
 等小型模块。它使用标准 AWS provider resources。AWS provider 及其可选 endpoint
 overrides 只在此 root module 中配置；子模块只接收标准资源输入。
 
-本地执行时，脚本为 Terraform provider 设置 `TF_VAR_aws_api_endpoint`，并设置
-CodeBuild 环境中的独立 `AWS_ENDPOINT_URL`，供 build container 内运行的命令使用。
-这两个值都不属于子模块接口。
+本地执行时，Runbook 中的终端命令为 Terraform provider 设置
+`TF_VAR_aws_api_endpoint`，并设置 CodeBuild 环境中的独立 `AWS_ENDPOINT_URL`，供
+build container 内运行的命令使用。这两个值都不属于子模块接口。
 
 ECS service 初始使用确定性的 bootstrap image，以便 Terraform 在首次 CodePipeline
 运行前创建健康的 service。随后 pipeline 使用 `imagedefinitions.json` 中的 release
@@ -26,6 +26,6 @@ Terraform 拥有网络、IAM、ECR、ECS service 配置、ALB、CodeBuild、Code
 definition revision 和 active release；因此 ECS service 对 `task_definition` 使用
 `lifecycle.ignore_changes`，避免 Terraform apply 把成功部署恢复成 bootstrap。
 
-ECS 应用 release 的 last-known-good 状态保存在本地 `.local/last-known-good.json`，由
-`mark-last-known-good.ps1` 写入，`rollback.ps1` 读取其中的 release version、image
-digest 和 task definition ARN。它适合单机学习实验，不是跨机器的生产发布数据库。
+ECS 应用 release 的 last-known-good 状态保存在本地 `.local/last-known-good.json`。
+Runbook 直接使用 AWS CLI 读取 release version、image digest 和 task definition ARN，
+再写入这个文件；它适合单机学习实验，不是跨机器的生产发布数据库。

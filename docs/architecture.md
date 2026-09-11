@@ -12,4 +12,5 @@ ECS/Fargate -> ALB -> HTTP
 应用标准输出 -> awslogs -> CloudWatch Logs
 ```
 
-根目录不包含 ECS 的具体实现细节，只负责提供导航、仓库级约定和委托命令。
+根目录不包含 ECS 的具体实现细节，只负责提供导航和仓库级约定；运行命令集中在
+ECS target 的中文 Runbook 中，并直接使用 Docker Compose、Terraform 和 AWS CLI。

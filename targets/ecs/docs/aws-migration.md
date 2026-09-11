@@ -10,7 +10,7 @@
 - CloudWatch Log Group 和 `awslogs` 配置
 - `buildspec.yml` 阶段以及 `imagedefinitions.json`
 - CodeBuild build stage 和 ECS standard deploy stage
-- 大部分 Terraform 资源以及 smoke-test 意图
+- 大部分 Terraform 资源以及健康检查意图
 
 ## 预计需要变化的部分
 
@@ -26,9 +26,11 @@
 - VPC routing、security groups、ALB DNS、ECS networking 以及 CloudWatch 行为
   都需要经过真实 AWS 验证。
 
-所有 LocalStack 专用行为都隔离在 `targets/ecs/scripts/`、root provider 的可选
+所有 LocalStack 专用行为都隔离在 Docker Compose 配置、root provider 的可选
 endpoint override、本地环境说明以及 CodeBuild runtime 的可选
 `AWS_ENDPOINT_URL` 变量中。应用和可复用的 Terraform 子模块不依赖 LocalStack。
+迁移时应将 [`operations-runbook.md`](operations-runbook.md) 中的本地 endpoint 和
+Compose 步骤替换为真实 AWS 的账户、区域、凭证和网络配置。
 
 本地 `.local/last-known-good.json` 只是单机学习实验的 release 状态文件；真实 AWS
 迁移不能把它当作跨执行器的发布数据库，应改用受保护的发布元数据存储或由真实部署

@@ -1,12 +1,12 @@
 # 本地环境与 LocalStack 边界
 
-本地环境使用 `../../` 中的共享 Terraform root。LocalStack routing 由本地 PowerShell
-脚本在 root module 的 AWS provider 边界配置；Terraform resources 和子模块保持
-AWS 形态，以便迁移时复用。
+本地环境使用 `../../` 中的共享 Terraform root。LocalStack routing 由当前终端的
+环境变量在 root module 的 AWS provider 边界配置；Terraform resources 和子模块
+保持 AWS 形态，以便迁移时复用。
 
 ## Provider 边界
 
-root module 负责可选的 AWS-compatible endpoint overrides。本地脚本设置
+root module 负责可选的 AWS-compatible endpoint overrides。Runbook 设置
 `TF_VAR_aws_api_endpoint`，`../../versions.tf` 中的 AWS provider 将 Terraform
 service calls 路由到项目专用的 LocalStack 实例。因此，LocalStack 专用 endpoint
 值保留在 environment/root 边界，不传入可复用的子模块。
@@ -37,10 +37,10 @@ image。
 Docker build context 仍然作为独立构建资产放在
 `targets/ecs/build-assets/codebuild-image` 中，不属于 Terraform AWS provider 配置。
 
-在 `targets/ecs/` 下运行：
+在 `targets/ecs/docs/operations-runbook.md` 中按顺序运行：
 
 ```powershell
-make terraform-fmt
-make terraform-validate
-make local-infra
+terraform -chdir=targets/ecs/infra fmt -check -recursive
+terraform -chdir=targets/ecs/infra validate
+terraform -chdir=targets/ecs/infra apply -auto-approve -input=false -var desired_count=0
 ```

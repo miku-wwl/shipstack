@@ -18,15 +18,15 @@ EKS 或 Lambda 等部署目标将作为 `targets/` 下的并列目录添加；�
 
 ## 快速开始
 
-Docker 必须可用。运行目标脚本时，它会复用已有 LocalStack 镜像并启动或使用项目专用
-的 `shipstack-ecs-localstack` 容器，宿主机 endpoint 为 `http://localhost:4567`；脚本
-会显式指定该 endpoint，不会调用真实 AWS。
+Docker、Docker Compose、Java 21、Maven、Terraform 和 AWS CLI 必须可用。
+ECS 目标通过项目级 Docker Compose 管理 `shipstack-ecs-localstack`，宿主机 endpoint
+为 `http://localhost:4567`；Terraform 和 AWS CLI 的 LocalStack endpoint 都由当前
+终端显式设置，不会调用真实 AWS。
 
-```powershell
-make ecs-test
-make ecs-local-e2e
-make ecs-rollback
-```
+完整的学习和操作命令见
+[`targets/ecs/docs/operations-runbook.md`](targets/ecs/docs/operations-runbook.md)。
+其中每条命令都直接调用 Docker Compose、Terraform、Maven、Docker 或 AWS CLI；仓库
+不提供 Makefile、PowerShell/Bash 包装脚本或其他 orchestration helper。
 
-目标相关的文档、脚本和 Terraform 全部位于 [`targets/ecs/`](targets/ecs/README.md)
-下。根目录 Makefile 只提供仓库级委托命令。
+目标相关的文档、Docker Compose 配置和 Terraform 全部位于
+[`targets/ecs/`](targets/ecs/README.md) 下。

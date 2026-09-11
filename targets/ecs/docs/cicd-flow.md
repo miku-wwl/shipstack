@@ -1,8 +1,8 @@
 # CI/CD 流程
 
-`package-source.ps1` 创建一个确定性的压缩包，其中包含仓库内容以及位于
-`targets/ecs/release/APP_VERSION` 的 release manifest。压缩包会上传到目标 artifact
-bucket。
+Runbook 中的显式 PowerShell 文件命令创建一个确定性的压缩包，其中包含仓库内容以及
+位于 `targets/ecs/release/APP_VERSION` 的 release manifest。压缩包会使用原生 AWS
+CLI 上传到目标 artifact bucket。
 
 CodePipeline V1 读取该 S3 对象，将 source artifact 传递给 CodeBuild，并接收包含
 `imagedefinitions.json` 的 build artifact。CodeBuild 使用一次 `mvn -B package` 完成

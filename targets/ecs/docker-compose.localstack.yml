@@ -1,0 +1,17 @@
+services:
+  localstack:
+    container_name: shipstack-ecs-localstack
+    image: ${LOCALSTACK_IMAGE:-localstack/localstack-pro:latest}
+    ports:
+      - "4567:4566"
+    environment:
+      SERVICES: s3,iam,ec2,ecr,ecs,elbv2,logs,codebuild,codepipeline,sts,cloudwatch
+      ENFORCE_IAM: "1"
+      CODEBUILD_ENABLE_CUSTOM_IMAGES: "1"
+      CODEBUILD_REMOVE_CONTAINERS: "0"
+      DEBUG: "1"
+      PERSISTENCE: "0"
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:?请先设置 LOCALSTACK_AUTH_TOKEN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./.local/localstack-data:/var/lib/localstack

@@ -18,45 +18,26 @@ Spring Boot stdout -> awslogs -> CloudWatch Logs
 
 ## 前置条件
 
-- Docker 可访问，并允许项目脚本使用 `http://localhost:4567`
-- Docker Desktop 正在运行
+- Docker Desktop 正在运行，并支持 Docker Compose
 - Java 21（应用使用 Java 17 也可以）
-- Maven 和 Terraform 已加入 PATH
-- AWS CLI 已加入 PATH
+- Maven、Terraform 和 AWS CLI 已加入 PATH
+- LocalStack Pro/Ultimate 运行镜像的授权令牌只存在于本地环境变量中
 
-命令使用测试凭证和显式的 LocalStack endpoint，不会调用真实 AWS。现有 LocalStack
-容器会被复用；本目标不会重启或重新配置它。
+命令使用测试凭证和显式的 LocalStack endpoint，不会调用真实 AWS。项目 LocalStack
+由 [`docker-compose.localstack.yml`](docker-compose.localstack.yml) 管理；不会修改
+已有的 `localstack-main` 容器。
 
 ## 运行
 
-在当前目录运行：
-
-```powershell
-make test
-make terraform-fmt
-make terraform-validate
-make local-e2e
-make rollback
-```
-
-在仓库根目录运行：
-
-```powershell
-make ecs-test
-make ecs-local-e2e
-make ecs-rollback
-```
+完整的启动、Terraform、bootstrap image、source artifact、CodePipeline、ECS/ALB/
+CloudWatch 验证以及 rollback 命令，统一见
+[`docs/operations-runbook.md`](docs/operations-runbook.md)。Runbook 中的命令必须
+直接使用 Docker Compose、Terraform、Maven、Docker 和 AWS CLI；本目录不再提供
+Makefile、PowerShell/Bash wrapper 或 helper automation script。
 
 完整 E2E 会运行初始 release（默认 `v1`）、候选 release（默认 `v2`），执行 HTTP 和
 日志检查，将初始 release 记录为 last-known-good，然后回滚到记录中的 task definition。
 它不会假设“当前 revision 减一”就是正确的回滚目标。
-
-正常发布完成并通过验证后，可以显式记录当前版本：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/mark-last-known-good.ps1 -ExpectedVersion v2
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/rollback.ps1
-```
 
 ## Qualification 边界
 

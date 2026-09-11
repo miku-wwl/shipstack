@@ -1,6 +1,6 @@
 # 部署生命周期
 
-qualification script 验证三个生命周期节点：
+qualification Runbook 验证三个生命周期节点：
 
 1. **初始 Release**：构建并推送 `v1`，通过 ALB 完成部署和访问，并在 CloudWatch Logs
    中观察到日志；全部通过后写入 `.local/last-known-good.json`。

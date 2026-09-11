@@ -10,9 +10,11 @@
 这里有意使用本地 S3 source，这样无需 GitHub 授权或自动触发行为即可执行可重复
 的 qualification run。source stage 保持隔离，以便未来迁移到真实 AWS 时使用
 CodeConnections。
+启动、轮询和验证命令集中在 [`operations-runbook.md`](operations-runbook.md)，直接
+使用 AWS CLI。
 # LocalStack 执行说明
 
-本地验证脚本还会检查 Build action 和 ECS service 的可观测输出。在 LocalStack
+本地 Runbook 还会检查 Build action 和 ECS service 的可观测输出。在 LocalStack
 2026.8 中，V1 ECS deploy plugin 可能在 service 已经收到新的 task-definition
 revision 并达到 desired count 后，仍将父 pipeline execution 保持为
 `InProgress`，或者将 waiter 报告为 `Waiter ServicesStable failed: Max attempts exceeded`。

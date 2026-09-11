@@ -1,7 +1,7 @@
 # Shipstack CodePipeline 学习路径
 
 这是一条从整体结构到运行验证、再到 AWS 迁移的渐进式学习路径。建议按顺序
-阅读，并在每一阶段结合对应的代码、Terraform 和 PowerShell 脚本进行观察。
+阅读，并在每一阶段结合对应的代码、Terraform、Docker Compose 和 AWS CLI 命令进行观察。
 
 ## 学习顺序
 
@@ -9,8 +9,8 @@
 
 阅读：[`README.md`](../README.md)
 
-目标：了解 Shipstack 的定位、当前实现的 ECS 目标、LocalStack 运行前提和根目录
-委托命令。
+目标：了解 Shipstack 的定位、当前实现的 ECS 目标、LocalStack 运行前提和操作
+Runbook 入口。
 
 ### 02 - 仓库整体架构
 
@@ -30,7 +30,7 @@ ALB 和 CloudWatch Logs 之间的关系。
 
 阅读：[`../targets/ecs/README.md`](../targets/ecs/README.md)
 
-目标：掌握 ECS 目标的前置条件、运行命令、完整 E2E 和 qualification 边界。
+目标：掌握 ECS 目标的前置条件、Runbook 命令、完整 E2E 和 qualification 边界。
 
 ### 05 - ECS 交付架构
 
@@ -58,7 +58,7 @@ IAM role 在本项目中的具体含义。
 阅读：[`../targets/ecs/infra/environments/local/README.md`](../targets/ecs/infra/environments/local/README.md)
 
 目标：理解 `TF_VAR_aws_api_endpoint`、CodeBuild 内部的 `AWS_ENDPOINT_URL`，以及
-宿主机和 Docker network 的两个 endpoint 视角。
+宿主机和 Docker network 的两个 endpoint 视角；LocalStack 由 Docker Compose 管理。
 
 ### 09 - CI/CD 发布流程
 
@@ -106,5 +106,6 @@ CI/CD 设计。
 
 1. 先完成 01-06，建立系统和 ECS 基础模型。
 2. 再阅读 07-08，重点观察 root provider 与 LocalStack endpoint 的边界。
-3. 然后完成 09-12，结合 `targets/ecs/scripts/` 实际跟踪一次发布、验证和回滚。
+3. 然后阅读 `targets/ecs/docs/operations-runbook.md`，按 09-12 的顺序直接执行
+   Terraform、Docker Compose 和 AWS CLI 命令，跟踪一次发布、验证和回滚。
 4. 最后阅读 13-14，思考从 LocalStack 迁移到真实 AWS 以及扩展第二个部署目标。

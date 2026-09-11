@@ -12,11 +12,10 @@
 | --- | --- |
 | `terraform validate` | PASS |
 | `terraform fmt -check -recursive` | PASS |
-| PowerShell 脚本解析 | PASS |
 | `buildspec.yml` YAML 解析 | PASS |
 | `mvn -B clean package` | PASS；当前没有测试源文件，因此显示 `No tests to run` |
 | `git diff --check` | PASS；仅有 Windows 换行提示 |
-| Bash 脚本语法检查 | NOT VERIFIED；当前 Windows 环境没有 `/bin/bash` |
+| `.ps1` / `.sh` 编排脚本检查 | PASS；仓库不再保留这些包装脚本 |
 
 ## LocalStack 运行时证据
 
