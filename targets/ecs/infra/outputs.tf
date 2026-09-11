@@ -2,6 +2,10 @@ output "artifact_bucket_name" {
   value = aws_s3_bucket.artifacts.id
 }
 
+output "aws_region" {
+  value = var.aws_region
+}
+
 output "source_object_key" {
   value = var.source_object_key
 }
