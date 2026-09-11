@@ -5,6 +5,8 @@ env:
 
 phases:
   install:
+    runtime-versions:
+      java: corretto21
     commands:
       - java -version
       - mvn -version
