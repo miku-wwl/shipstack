@@ -15,21 +15,21 @@ variable "aws_region" {
 
 variable "aws_api_endpoint" {
   type        = string
-  description = "Optional AWS API endpoint override. Set only for AWS-compatible local environments."
+  description = "Optional AWS API endpoint override. Set this to the host-reachable LocalStack endpoint for local learning."
   nullable    = true
   default     = null
 }
 
 variable "codebuild_aws_endpoint" {
   type        = string
-  description = "Optional endpoint injected into the CodeBuild runtime environment."
+  description = "Optional LocalStack endpoint reachable from the CodeBuild container."
   nullable    = true
   default     = null
 }
 
 variable "ecr_registry_port" {
   type        = number
-  description = "Optional registry port override for AWS-compatible local environments."
+  description = "Registry port exposed by LocalStack when it differs from the ECR repository URI."
   default     = 4566
 }
 

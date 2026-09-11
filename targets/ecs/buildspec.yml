@@ -6,21 +6,16 @@ env:
 phases:
   install:
     commands:
-      - echo "Installing build prerequisites"
       - java -version
       - mvn -version
       - docker --version
   pre_build:
     commands:
-      - export RELEASE_FILE="targets/ecs/release/APP_VERSION"
-      - test -f "$RELEASE_FILE"
-      - export APP_VERSION="$(tr -d '\r\n' < "$RELEASE_FILE")"
-      - test -n "$APP_VERSION"
-      - export IMAGE_TAG="$APP_VERSION"
+      - export IMAGE_TAG="build-${CODEBUILD_BUILD_NUMBER:-$(date +%s)}"
+      - export APP_VERSION="$IMAGE_TAG"
       - export ECR_REGISTRY="$(printf '%s' "$ECR_REPOSITORY_URI" | cut -d/ -f1)"
       - export IMAGE_URI="$ECR_REPOSITORY_URI:$IMAGE_TAG"
-      - echo "Building $IMAGE_URI for release $APP_VERSION"
-      - if [ -n "${AWS_ENDPOINT_URL:-}" ]; then aws sts get-caller-identity --query Account --output text --endpoint-url "$AWS_ENDPOINT_URL"; else aws sts get-caller-identity --query Account --output text; fi
+      - echo "Building $IMAGE_URI"
       - if [ -n "${AWS_ENDPOINT_URL:-}" ]; then aws ecr get-login-password --region "$AWS_DEFAULT_REGION" --endpoint-url "$AWS_ENDPOINT_URL" | docker login --username AWS --password-stdin "$ECR_REGISTRY"; else aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"; fi
   build:
     commands:
@@ -31,14 +26,9 @@ phases:
       - cd ../../..
   post_build:
     commands:
-      - if [ -n "${AWS_ENDPOINT_URL:-}" ]; then export IMAGE_DIGEST="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text --endpoint-url "$AWS_ENDPOINT_URL")"; else export IMAGE_DIGEST="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)"; fi
-      - test -n "$IMAGE_DIGEST" && test "$IMAGE_DIGEST" != "None"
       - printf '[{"name":"%s","imageUri":"%s"}]' "$ECS_CONTAINER_NAME" "$IMAGE_URI" > imagedefinitions.json
-      - printf '{"releaseVersion":"%s","imageUri":"%s","imageDigest":"%s"}\n' "$APP_VERSION" "$IMAGE_URI" "$IMAGE_DIGEST" > release-metadata.json
       - cat imagedefinitions.json
-      - cat release-metadata.json
 
 artifacts:
   files:
     - imagedefinitions.json
-    - release-metadata.json
