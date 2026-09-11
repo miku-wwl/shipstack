@@ -2,12 +2,12 @@ resource "aws_vpc" "this" {
   cidr_block           = "10.42.0.0/16"
   enable_dns_support   = true
   enable_dns_hostnames = true
-  tags                 = { Name = "${var.name_prefix}-vpc" }
+  tags                 = { Name = "${local.name_prefix}-vpc" }
 }
 
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
-  tags   = { Name = "${var.name_prefix}-igw" }
+  tags   = { Name = "${local.name_prefix}-igw" }
 }
 
 resource "aws_subnet" "public" {
@@ -16,16 +16,18 @@ resource "aws_subnet" "public" {
   cidr_block              = "10.42.${count.index}.0/24"
   availability_zone       = var.availability_zones[count.index]
   map_public_ip_on_launch = true
-  tags                    = { Name = "${var.name_prefix}-public-${count.index + 1}" }
+  tags                    = { Name = "${local.name_prefix}-public-${count.index + 1}" }
 }
 
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
+
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.this.id
   }
-  tags = { Name = "${var.name_prefix}-public-rt" }
+
+  tags = { Name = "${local.name_prefix}-public-rt" }
 }
 
 resource "aws_route_table_association" "public" {
@@ -35,8 +37,9 @@ resource "aws_route_table_association" "public" {
 }
 
 resource "aws_security_group" "alb" {
-  name   = "${var.name_prefix}-alb-sg"
+  name   = "${local.name_prefix}-alb-sg"
   vpc_id = aws_vpc.this.id
+
   ingress {
     description = "HTTP"
     from_port   = 80
@@ -44,18 +47,21 @@ resource "aws_security_group" "alb" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags = { Name = "${var.name_prefix}-alb-sg" }
+
+  tags = { Name = "${local.name_prefix}-alb-sg" }
 }
 
 resource "aws_security_group" "ecs" {
-  name   = "${var.name_prefix}-ecs-sg"
+  name   = "${local.name_prefix}-ecs-sg"
   vpc_id = aws_vpc.this.id
+
   ingress {
     description     = "Application traffic from ALB"
     from_port       = 8080
@@ -63,11 +69,13 @@ resource "aws_security_group" "ecs" {
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags = { Name = "${var.name_prefix}-ecs-sg" }
+
+  tags = { Name = "${local.name_prefix}-ecs-sg" }
 }

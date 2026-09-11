@@ -1,27 +1,34 @@
 resource "aws_ecs_cluster" "this" {
-  name = var.cluster_name
+  name = local.ecs_cluster_name
+
   setting {
     name  = "containerInsights"
     value = "enabled"
   }
-  tags = { Name = "${var.name_prefix}-cluster" }
+
+  tags = { Name = "${local.name_prefix}-cluster" }
 }
 
 resource "aws_ecs_task_definition" "this" {
-  family                   = var.task_family
+  family                   = "${local.name_prefix}-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
   memory                   = "512"
-  execution_role_arn       = var.task_execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
+
   container_definitions = jsonencode([{
-    name         = var.container_name
-    image        = var.image
-    essential    = true
-    cpu          = 256
-    memory       = 512
-    portMappings = [{ containerPort = 8080, hostPort = 8080, protocol = "tcp" }]
+    name      = "ecs-platform-demo"
+    image     = local.bootstrap_image
+    essential = true
+    cpu       = 256
+    memory    = 512
+    portMappings = [{
+      containerPort = 8080
+      hostPort      = 8080
+      protocol      = "tcp"
+    }]
     healthCheck = {
       command     = ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
       interval    = 10
@@ -32,17 +39,18 @@ resource "aws_ecs_task_definition" "this" {
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        "awslogs-group"         = var.log_group_name
+        "awslogs-group"         = aws_cloudwatch_log_group.app.name
         "awslogs-region"        = var.aws_region
         "awslogs-stream-prefix" = "ecs"
       }
     }
   }])
-  tags = { Name = "${var.name_prefix}-task" }
+
+  tags = { Name = "${local.name_prefix}-task" }
 }
 
 resource "aws_ecs_service" "this" {
-  name            = var.service_name
+  name            = local.ecs_service_name
   cluster         = aws_ecs_cluster.this.id
   task_definition = aws_ecs_task_definition.this.arn
   desired_count   = var.desired_count
@@ -53,24 +61,22 @@ resource "aws_ecs_service" "this" {
   health_check_grace_period_seconds  = 60
 
   network_configuration {
-    subnets          = var.task_subnet_ids
-    security_groups  = [var.task_security_group_id]
+    subnets          = aws_subnet.public[*].id
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = true
   }
 
   load_balancer {
-    target_group_arn = var.target_group_arn
-    container_name   = var.container_name
+    target_group_arn = aws_lb_target_group.this.arn
+    container_name   = "ecs-platform-demo"
     container_port   = 8080
   }
 
-  depends_on = [aws_ecs_task_definition.this]
-  tags       = { Name = "${var.name_prefix}-service" }
+  depends_on = [aws_lb_listener.this]
+  tags       = { Name = "${local.name_prefix}-service" }
 
   lifecycle {
-    # CodePipeline's ECS standard deploy action owns the active revision.
-    # Terraform still owns the service and its desired count, but must not
-    # roll a successful pipeline deployment back to the bootstrap revision.
+    # CodePipeline owns the active task-definition revision after deployment.
     ignore_changes = [task_definition]
   }
 }

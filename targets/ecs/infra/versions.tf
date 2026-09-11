@@ -29,20 +29,19 @@ provider "aws" {
 }
 
 data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
 
 locals {
-  name_prefix        = "${var.project_name}-${var.target_name}"
-  ecr_repository     = "${local.name_prefix}-demo"
-  ecr_repository_uri = replace(module.ecr.repository_uri, ":4566/", ":${var.ecr_registry_port}/")
-  ecs_cluster_name   = "${local.name_prefix}-cluster"
-  ecs_service_name   = "${local.name_prefix}-service"
-  # ECS evaluates UpdateService against the service-name resource pattern;
-  # keep the cluster segment wildcarded while retaining the exact service.
-  ecs_service_arn          = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/*/${local.ecs_service_name}"
+  name_prefix              = "${var.project_name}-${var.target_name}"
+  ecr_repository           = "${local.name_prefix}-demo"
+  ecs_cluster_name         = "${local.name_prefix}-cluster"
+  ecs_service_name         = "${local.name_prefix}-service"
   codebuild_name           = "${local.name_prefix}-build"
   codepipeline_name        = "${local.name_prefix}-pipeline"
   log_group_name           = "/shipstack/${var.target_name}/ecs-platform-demo"
   codebuild_log_group_name = "/aws/codebuild/${local.name_prefix}"
-  bootstrap_image          = "${local.ecr_repository_uri}:${var.bootstrap_image_tag}"
+
+  # LocalStack can expose the registry on a host port that differs from the
+  # repository URL returned by its ECR API. On real AWS this replace is a no-op.
+  ecr_repository_uri = replace(aws_ecr_repository.this.repository_url, ":4566/", ":${var.ecr_registry_port}/")
+  bootstrap_image    = "${local.ecr_repository_uri}:${var.bootstrap_image_tag}"
 }

@@ -17,7 +17,7 @@ Future targets such as EC2, EKS, or Lambda can be added beside `targets/ecs/`. S
 - LocalStack Ultimate first; keep a clean path to real AWS.
 - Terraform owns infrastructure; no deployment wrapper scripts.
 - Native AWS/LocalStack CLI commands stay visible when operating the lab.
-- Keep the Terraform root/module boundary explicit and avoid wrapper automation.
+- Prefer direct resources over premature Terraform modules.
 - Keep the demo application intentionally small so the delivery path remains the focus.
 
 Start with [`targets/ecs/README.md`](targets/ecs/README.md).

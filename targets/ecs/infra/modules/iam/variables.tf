@@ -1,9 +1,0 @@
-variable "name_prefix" { type = string }
-variable "artifact_bucket_arn" { type = string }
-variable "codebuild_project_arn" { type = string }
-variable "codebuild_log_group_arn" { type = string }
-variable "ecr_repository_arn" { type = string }
-variable "log_group_arn" { type = string }
-variable "ecs_service_arn" { type = string }
-variable "task_execution_role_arn" { type = string }
-variable "task_role_arn" { type = string }
