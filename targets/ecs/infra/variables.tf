@@ -35,7 +35,7 @@ variable "ecr_registry_port" {
 
 variable "codebuild_image" {
   type    = string
-  default = "shipstack-ecs-codebuild-local:1"
+  default = "aws/codebuild/standard:7.0"
 }
 
 variable "source_object_key" {

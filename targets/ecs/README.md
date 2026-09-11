@@ -18,22 +18,28 @@ Spring Boot stdout -> awslogs -> CloudWatch Logs
 
 ## 前置条件
 
-- Docker Desktop 正在运行，并支持 Docker Compose
+- Docker 可用；LocalStack Ultimate 已由外部环境启动
 - Java 21（应用使用 Java 17 也可以）
 - Maven、Terraform 和 AWS CLI 已加入 PATH
-- LocalStack Pro/Ultimate 运行镜像的授权令牌只存在于本地环境变量中
 
-命令使用测试凭证和显式的 LocalStack endpoint，不会调用真实 AWS。项目 LocalStack
-由 [`docker-compose.localstack.yml`](docker-compose.localstack.yml) 管理；不会修改
-已有的 `localstack-main` 容器。
+命令使用测试凭证和显式的外部 LocalStack endpoint，不会调用真实 AWS。本仓库不
+创建或重启 LocalStack，也不保存 `LOCALSTACK_AUTH_TOKEN`。
 
 ## 运行
 
-完整的启动、Terraform、bootstrap image、source artifact、CodePipeline、ECS/ALB/
-CloudWatch 验证以及 rollback 命令，统一见
-[`docs/operations-runbook.md`](docs/operations-runbook.md)。Runbook 中的命令必须
-直接使用 Docker Compose、Terraform、Maven、Docker 和 AWS CLI；本目录不再提供
-Makefile、PowerShell/Bash wrapper 或 helper automation script。
+Terraform root module、业务应用和 CodeBuild buildspec 是本目标的核心内容。LocalStack
+endpoint、AWS 测试凭证和可选的 CodeBuild endpoint 由外部环境提供；本目录不提供
+LocalStack Compose 文件、Makefile、PowerShell/Bash wrapper 或 helper automation script。
+
+直接操作时，在外部 LocalStack 已就绪后设置 `TF_VAR_aws_api_endpoint`、
+`TF_VAR_codebuild_aws_endpoint` 和 AWS CLI endpoint，再执行：
+
+```powershell
+terraform -chdir=infra init -input=false
+terraform -chdir=infra fmt -check -recursive
+terraform -chdir=infra validate
+terraform -chdir=infra plan
+```
 
 完整 E2E 会运行初始 release（默认 `v1`）、候选 release（默认 `v2`），执行 HTTP 和
 日志检查，将初始 release 记录为 last-known-good，然后回滚到记录中的 task definition。

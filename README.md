@@ -18,15 +18,10 @@ EKS 或 Lambda 等部署目标将作为 `targets/` 下的并列目录添加；�
 
 ## 快速开始
 
-Docker、Docker Compose、Java 21、Maven、Terraform 和 AWS CLI 必须可用。
-ECS 目标通过项目级 Docker Compose 管理 `shipstack-ecs-localstack`，宿主机 endpoint
-为 `http://localhost:4567`；Terraform 和 AWS CLI 的 LocalStack endpoint 都由当前
-终端显式设置，不会调用真实 AWS。
+Java 21、Maven、Terraform 和 AWS CLI 必须可用。LocalStack Ultimate 由外部环境
+提供；本仓库不启动、配置或打包 LocalStack。Terraform root module 通过
+`TF_VAR_aws_api_endpoint` 接收外部 LocalStack endpoint，业务应用和 Terraform
+代码位于 [`targets/ecs/`](targets/ecs/README.md) 下。
 
-完整的学习和操作命令见
-[`targets/ecs/docs/operations-runbook.md`](targets/ecs/docs/operations-runbook.md)。
-其中每条命令都直接调用 Docker Compose、Terraform、Maven、Docker 或 AWS CLI；仓库
-不提供 Makefile、PowerShell/Bash 包装脚本或其他 orchestration helper。
-
-目标相关的文档、Docker Compose 配置和 Terraform 全部位于
-[`targets/ecs/`](targets/ecs/README.md) 下。
+本仓库不提供 Makefile、PowerShell/Bash 包装脚本或 LocalStack 编排文件。运行时请在
+外部 LocalStack 已经可用的前提下，直接执行 Terraform CLI、Maven、Docker 和 AWS CLI。
