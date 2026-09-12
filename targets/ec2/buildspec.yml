@@ -1,0 +1,125 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto21
+    commands:
+      - java -version
+      - mvn -version
+      - aws --version
+      - curl --version
+  build:
+    commands:
+      - |
+          set -euo pipefail
+
+          : "${AWS_ENDPOINT_URL:?AWS_ENDPOINT_URL is required for the external LocalStack instance}"
+          : "${AWS_DEFAULT_REGION:?AWS_DEFAULT_REGION is required}"
+          : "${ARTIFACT_BUCKET:?ARTIFACT_BUCKET is required}"
+          : "${EC2_INSTANCE_ID:?EC2_INSTANCE_ID is required}"
+          : "${INSTANCE_AWS_ENDPOINT:?INSTANCE_AWS_ENDPOINT is required}"
+
+          cd "$CODEBUILD_SRC_DIR/targets/ec2/app"
+          mvn -B clean test
+          mvn -B package -DskipTests
+          cd "$CODEBUILD_SRC_DIR"
+
+          RELEASE_ID="build-${CODEBUILD_BUILD_NUMBER:-$(date +%s)}"
+          APP_ARTIFACT="$CODEBUILD_SRC_DIR/targets/ec2/app/target/shipstack-ec2-app.jar"
+          RELEASE_OBJECT_KEY="releases/$RELEASE_ID/shipstack-ec2-app.jar"
+          APP_PORT="${APP_PORT:-8080}"
+
+          test -s "$APP_ARTIFACT"
+          printf '%s\n' "$RELEASE_ID" > release.txt
+
+          echo "Uploading $APP_ARTIFACT to s3://$ARTIFACT_BUCKET/$RELEASE_OBJECT_KEY"
+          aws s3 cp "$APP_ARTIFACT" "s3://$ARTIFACT_BUCKET/$RELEASE_OBJECT_KEY" \
+            --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION"
+          aws s3api head-object --bucket "$ARTIFACT_BUCKET" --key "$RELEASE_OBJECT_KEY" \
+            --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION"
+
+          PRESIGNED_URL="$(aws s3 presign "s3://$ARTIFACT_BUCKET/$RELEASE_OBJECT_KEY" \
+            --endpoint-url "$INSTANCE_AWS_ENDPOINT" --region "$AWS_DEFAULT_REGION" \
+            --expires-in 900)"
+          test -n "$PRESIGNED_URL"
+
+          python3 - "$RELEASE_ID" "$PRESIGNED_URL" "$APP_PORT" > ssm-parameters.json <<'PY'
+          import json
+          import sys
+
+          release, presigned_url, port = sys.argv[1:]
+          app_root = "/opt/shipstack-ec2"
+          app_path = f"{app_root}/shipstack-ec2-app.jar"
+          release_path = f"{app_root}/releases/{release}.jar"
+          pid_path = f"{app_root}/shipstack-ec2-app.pid"
+          log_path = f"{app_root}/shipstack-ec2-app.log"
+          commands = [
+              "set -euo pipefail",
+              f"mkdir -p {app_root}/releases",
+              "if ! command -v java >/dev/null 2>&1; then dnf install -y java-21-amazon-corretto-headless; fi",
+              "command -v curl >/dev/null 2>&1",
+              f"curl --fail --silent --show-error --location --output {release_path} '{presigned_url}'",
+              f"test -s {release_path}",
+              f"if [ -f {pid_path} ]; then kill $(cat {pid_path}) || true; fi",
+              f"cp {release_path} {app_path}",
+              f"printf '%s\\n' {release} > {app_root}/release.txt",
+              f"nohup env APP_VERSION={release} SERVER_PORT={port} java -jar {app_path} > {log_path} 2>&1 & echo $! > {pid_path}",
+              "sleep 3",
+              f"kill -0 $(cat {pid_path})",
+              f"health=$(curl --fail --silent http://127.0.0.1:{port}/health); echo health:$health",
+              f"response=$(curl --fail --silent http://127.0.0.1:{port}/release); echo release:$response",
+              f"printf '%s' \"$response\" | grep -F '\\\"service\\\":\\\"shipstack\\\"'",
+              f"printf '%s' \"$response\" | grep -F '\\\"target\\\":\\\"ec2\\\"'",
+              f"printf '%s' \"$response\" | grep -F '\\\"release\\\":\\\"{release}\\\"'",
+              f"echo process:$(cat {pid_path}) release:{release}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+
+          echo "Sending SSM deployment command to $EC2_INSTANCE_ID"
+          SEND_RESULT="$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --parameters "file://$CODEBUILD_SRC_DIR/ssm-parameters.json" \
+            --comment "Shipstack EC2 release $RELEASE_ID" \
+            --output json --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION")"
+          COMMAND_ID="$(printf '%s' "$SEND_RESULT" | python3 -c 'import json, sys; print(json.load(sys.stdin)["Command"]["CommandId"])')"
+          test -n "$COMMAND_ID"
+          printf '%s\n' "$COMMAND_ID" > ssm-command-id.txt
+
+          STATUS="Pending"
+          for attempt in $(seq 1 60); do
+            STATUS="$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" \
+              --query Status --output text --endpoint-url "$AWS_ENDPOINT_URL" \
+              --region "$AWS_DEFAULT_REGION" 2>/dev/null || true)"
+            echo "SSM command status: $STATUS"
+            case "$STATUS" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut|Cancelling) exit 1 ;;
+            esac
+            sleep 2
+          done
+          test "$STATUS" = "Success"
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" \
+            --output json --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" \
+            | tee ssm-invocation.json
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" \
+            --query StandardOutputContent --output text \
+            --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" \
+            | tee ec2-release-response.json
+          grep -F "release:$RELEASE_ID" ec2-release-response.json
+
+artifacts:
+  files:
+    - release.txt
+    - ssm-command-id.txt
+    - ssm-invocation.json
+    - ec2-release-response.json
