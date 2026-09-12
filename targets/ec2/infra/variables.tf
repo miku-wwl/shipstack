@@ -33,7 +33,7 @@ variable "instance_aws_endpoint" {
 
 variable "codebuild_image" {
   type    = string
-  default = "aws/codebuild/standard:7.0"
+  default = "public.ecr.aws/codebuild/amazonlinux-x86_64-standard:5.0"
 }
 
 variable "source_object_key" {

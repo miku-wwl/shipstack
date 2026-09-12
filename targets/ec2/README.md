@@ -181,6 +181,7 @@ old Java process
 
 LocalStack Ultimate 适合观察 AWS API、资源关系、Pipeline/Build/SSM 控制面和可支持的运行时行为，但不能自动等同于真实 EC2：
 
+- 本地 LocalStack/Docker-backed CodeBuild 路径默认使用 `public.ecr.aws/codebuild/amazonlinux-x86_64-standard:5.0`，因为这是当前环境中可用的兼容镜像；这不表示 AWS 的 `aws/codebuild/standard:7.0` 无效，真实 AWS CodeBuild 可以按其提供的 curated image 配置运行；
 - LocalStack 的 EC2 运行时能力取决于版本、授权和启动配置；
 - Terraform 创建 `aws_instance` 不代表一定有可登录、可运行 Java 的真实操作系统；
 - SSM `send-command` 成功不代表远程进程一定启动；
