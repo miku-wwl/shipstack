@@ -1,0 +1,51 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto21
+    commands:
+      - test -n "${AWS_ENDPOINT_URL:-}" || (echo "AWS_ENDPOINT_URL is required for the external LocalStack instance" && exit 1)
+      - java -version
+      - mvn -version
+      - aws --version
+  pre_build:
+    commands:
+      - export RELEASE_ID="build-${CODEBUILD_BUILD_NUMBER:-$(date +%s)}"
+      - export APP_VERSION="$RELEASE_ID"
+      - export FUNCTION_ARTIFACT="$CODEBUILD_SRC_DIR/targets/lambda/app/target/lambda-function.jar"
+      - echo "$RELEASE_ID" > "$CODEBUILD_SRC_DIR/release.txt"
+      - echo "Deploying $LAMBDA_FUNCTION_NAME release $RELEASE_ID through $AWS_ENDPOINT_URL"
+  build:
+    commands:
+      - cd "$CODEBUILD_SRC_DIR/targets/lambda/app"
+      - mvn -B clean test
+      - mvn -B package -DskipTests
+      - cd "$CODEBUILD_SRC_DIR"
+      - aws lambda update-function-code --function-name "$LAMBDA_FUNCTION_NAME" --zip-file "fileb://$FUNCTION_ARTIFACT" --publish --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION"
+      - aws lambda update-function-configuration --function-name "$LAMBDA_FUNCTION_NAME" --environment "Variables={APP_VERSION=$RELEASE_ID}" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION"
+      - |
+          for attempt in $(seq 1 30); do
+            status="$(aws lambda get-function-configuration --function-name "$LAMBDA_FUNCTION_NAME" --query 'LastUpdateStatus' --output text --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION")"
+            echo "Lambda update status: $status"
+            if [ "$status" = "Successful" ] || [ "$status" = "None" ]; then
+              break
+            fi
+            if [ "$status" = "Failed" ]; then
+              exit 1
+            fi
+            sleep 2
+          done
+          test "$status" = "Successful" || test "$status" = "None"
+      - aws lambda invoke --function-name "$LAMBDA_FUNCTION_NAME" --payload '{}' --cli-binary-format raw-in-base64-out --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" "$CODEBUILD_SRC_DIR/lambda-response.json"
+      - cat "$CODEBUILD_SRC_DIR/lambda-response.json"
+      - python3 -c 'import json, sys; response=json.load(open(sys.argv[1])); expected=sys.argv[2]; assert response.get("service") == "shipstack", response; assert response.get("target") == "lambda", response; assert response.get("release") == expected, response; print("Lambda deployment validation passed")' "$CODEBUILD_SRC_DIR/lambda-response.json" "$RELEASE_ID"
+
+artifacts:
+  files:
+    - lambda-response.json
+    - release.txt
+    - targets/lambda/app/target/lambda-function.jar
