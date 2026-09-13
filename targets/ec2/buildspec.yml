@@ -77,9 +77,9 @@ phases:
               f"kill -0 $(cat {pid_path})",
               f"health=$(curl --fail --silent http://127.0.0.1:{port}/health); echo health:$health",
               f"response=$(curl --fail --silent http://127.0.0.1:{port}/release); echo release:$response",
-              f"printf '%s' \"$response\" | grep -F '\\\"service\\\":\\\"shipstack\\\"'",
-              f"printf '%s' \"$response\" | grep -F '\\\"target\\\":\\\"ec2\\\"'",
-              f"printf '%s' \"$response\" | grep -F '\\\"release\\\":\\\"{release}\\\"'",
+              f"printf '%s' \"$response\" | grep -F '\"service\":\"shipstack\"'",
+              f"printf '%s' \"$response\" | grep -F '\"target\":\"ec2\"'",
+              f"printf '%s' \"$response\" | grep -F '\"release\":\"{release}\"'",
               f"echo process:$(cat {pid_path}) release:{release}",
           ]
           print(json.dumps({"commands": commands}))

@@ -9,9 +9,11 @@ resource "aws_instance" "this" {
 
   user_data = <<-USERDATA
     #!/bin/bash
-    set -eux
+    set -euo pipefail
     mkdir -p /opt/shipstack-ec2/releases
-    dnf install -y java-21-amazon-corretto-headless curl
+    dnf install -y java-21-amazon-corretto-headless
+    java -version
+    command -v curl
     touch /opt/shipstack-ec2/instance-bootstrap-complete
   USERDATA
 
