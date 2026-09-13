@@ -1,0 +1,82 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto21
+    commands:
+      - export JAVA_HOME="${JAVA_21_HOME:-/usr/lib/jvm/java-21-amazon-corretto.x86_64}"
+      - export PATH="$JAVA_HOME/bin:$PATH"
+      - java -version
+      - mvn -version
+      - docker --version
+      - aws --version
+      - kubectl version --client=true
+  pre_build:
+    commands:
+      - set -euo pipefail
+      - |-
+        : "${AWS_ENDPOINT_URL:?AWS_ENDPOINT_URL is required for the external LocalStack instance}"
+      - |-
+        : "${ECR_REPOSITORY_URI:?ECR_REPOSITORY_URI is required}"
+      - |-
+        : "${EKS_CLUSTER_NAME:?EKS_CLUSTER_NAME is required}"
+      - |-
+        : "${K8S_NAMESPACE:?K8S_NAMESPACE is required}"
+      - |-
+        : "${KUBERNETES_API_ENDPOINT:?KUBERNETES_API_ENDPOINT is required}"
+      - export IMAGE_TAG="build-${CODEBUILD_BUILD_NUMBER:-$(date +%s)}"
+      - export RELEASE_ID="$IMAGE_TAG"
+      - export IMAGE_URI="$ECR_REPOSITORY_URI:$IMAGE_TAG"
+      - export ECR_REGISTRY="$(printf '%s' "$ECR_REPOSITORY_URI" | cut -d/ -f1)"
+      - echo "Building and deploying $IMAGE_URI"
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" --endpoint-url "$AWS_ENDPOINT_URL" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+  build:
+    commands:
+      - set -euo pipefail
+      - export JAVA_HOME="${JAVA_21_HOME:-/usr/lib/jvm/java-21-amazon-corretto.x86_64}"
+      - export PATH="$JAVA_HOME/bin:$PATH"
+      - cd targets/eks/app
+      - mvn -B clean package
+      - docker build --pull=false --build-arg APP_VERSION="$RELEASE_ID" --tag "$IMAGE_URI" .
+      - docker push "$IMAGE_URI"
+      - cd ../../..
+      - mkdir -p targets/eks/k8s/rendered
+      - sed -e "s|__K8S_NAMESPACE__|$K8S_NAMESPACE|g" -e "s|__RELEASE_ID__|$RELEASE_ID|g" -e "s|__IMAGE_URI__|$IMAGE_URI|g" targets/eks/k8s/namespace.yaml > targets/eks/k8s/rendered/namespace.yaml
+      - sed -e "s|__K8S_NAMESPACE__|$K8S_NAMESPACE|g" -e "s|__RELEASE_ID__|$RELEASE_ID|g" -e "s|__IMAGE_URI__|$IMAGE_URI|g" targets/eks/k8s/deployment.yaml > targets/eks/k8s/rendered/deployment.yaml
+      - sed -e "s|__K8S_NAMESPACE__|$K8S_NAMESPACE|g" -e "s|__RELEASE_ID__|$RELEASE_ID|g" -e "s|__IMAGE_URI__|$IMAGE_URI|g" targets/eks/k8s/service.yaml > targets/eks/k8s/rendered/service.yaml
+      - export KUBECONFIG="$CODEBUILD_SRC_DIR/.kube/config"
+      - mkdir -p "$(dirname "$KUBECONFIG")"
+      - rm -f "$KUBECONFIG"
+      - aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_DEFAULT_REGION" --endpoint-url "$AWS_ENDPOINT_URL" --kubeconfig "$KUBECONFIG"
+      - |-
+        KUBE_CLUSTER="$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')"
+        kubectl config set-cluster "$KUBE_CLUSTER" --server="$KUBERNETES_API_ENDPOINT" --insecure-skip-tls-verify=true >/dev/null
+      - kubectl config current-context
+      - kubectl apply -f targets/eks/k8s/rendered/namespace.yaml
+      - kubectl apply -f targets/eks/k8s/rendered/deployment.yaml
+      - kubectl apply -f targets/eks/k8s/rendered/service.yaml
+      - kubectl rollout status --namespace "$K8S_NAMESPACE" deployment/shipstack-eks --timeout=180s
+      - kubectl get deployment,pods,service --namespace "$K8S_NAMESPACE" -o wide
+  post_build:
+    commands:
+      - set -euo pipefail
+      - export KUBECONFIG="$CODEBUILD_SRC_DIR/.kube/config"
+      - kubectl port-forward --namespace "$K8S_NAMESPACE" service/shipstack-eks 18080:8080 > "$CODEBUILD_SRC_DIR/port-forward.log" 2>&1 &
+      - export PORT_FORWARD_PID=$!
+      - export HEALTH_RESPONSE=""
+      - export HEALTH_READY=false
+      - for attempt in $(seq 1 30); do if HEALTH_RESPONSE="$(curl --silent --show-error --connect-timeout 1 --max-time 2 http://127.0.0.1:18080/health 2>/dev/null)"; then if HEALTH_RESPONSE="$HEALTH_RESPONSE" python3 -c 'import json, os, sys; sys.exit(0 if json.loads(os.environ["HEALTH_RESPONSE"]).get("status") == "UP" else 1)'; then HEALTH_READY=true; echo "Health became ready on attempt $attempt"; break; fi; fi; if [ "$attempt" -lt 30 ]; then sleep 1; fi; done
+      - if [ "$HEALTH_READY" != true ]; then echo "Application did not become healthy before the 30-second deadline" >&2; cat "$CODEBUILD_SRC_DIR/port-forward.log" >&2; kubectl describe pods --namespace "$K8S_NAMESPACE" >&2; kubectl logs --namespace "$K8S_NAMESPACE" --selector app.kubernetes.io/name=shipstack-eks --all-containers --tail=100 >&2; kill "$PORT_FORWARD_PID" 2>/dev/null; exit 1; fi
+      - export RELEASE_RESPONSE="$(curl --fail --silent --show-error --connect-timeout 1 --max-time 2 http://127.0.0.1:18080/release)"
+      - |-
+        EXPECTED_RELEASE="$RELEASE_ID" RELEASE_RESPONSE="$RELEASE_RESPONSE" python3 -c 'import json, os, sys; data=json.loads(os.environ["RELEASE_RESPONSE"]); expected={"service":"shipstack", "target":"eks", "release":os.environ["EXPECTED_RELEASE"]}; missing={k:(expected[k], data.get(k)) for k in expected if data.get(k) != expected[k]}; print(json.dumps(data, ensure_ascii=False)); sys.exit("release identity mismatch: " + repr(missing) if missing else 0)'
+      - if kill -0 "$PORT_FORWARD_PID" 2>/dev/null; then kill "$PORT_FORWARD_PID"; fi
+      - 'echo "EKS deployment and release validation succeeded: $RELEASE_ID"'
+
+artifacts:
+  files:
+    - targets/eks/k8s/rendered/*.yaml

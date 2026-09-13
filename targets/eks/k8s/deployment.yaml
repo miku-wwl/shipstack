@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipstack-eks
+  namespace: __K8S_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: shipstack-eks
+    app.kubernetes.io/part-of: shipstack
+    shipstack.io/target: eks
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 120
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: shipstack-eks
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: shipstack-eks
+        app.kubernetes.io/part-of: shipstack
+        shipstack.io/target: eks
+        shipstack.io/release: __RELEASE_ID__
+    spec:
+      containers:
+        - name: shipstack-eks
+          image: __IMAGE_URI__
+          imagePullPolicy: Always
+          env:
+            - name: APP_VERSION
+              value: __RELEASE_ID__
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

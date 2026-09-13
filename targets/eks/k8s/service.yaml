@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: shipstack-eks
+  namespace: __K8S_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: shipstack-eks
+    app.kubernetes.io/part-of: shipstack
+    shipstack.io/target: eks
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: shipstack-eks
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
