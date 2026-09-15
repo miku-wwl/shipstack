@@ -1,0 +1,134 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto21
+    commands:
+      - set -euo pipefail
+      - java -version
+      - mvn -version
+      - docker --version
+      - aws --version
+      - python3 --version
+  pre_build:
+    commands:
+      - set -euo pipefail
+      - |-
+        : "${AWS_ENDPOINT_URL:?AWS_ENDPOINT_URL is required for the external LocalStack instance}"
+        : "${AWS_DEFAULT_REGION:?AWS_DEFAULT_REGION is required}"
+        : "${ECR_REPOSITORY_URI:?ECR_REPOSITORY_URI is required}"
+        : "${BATCH_JOB_QUEUE_NAME:?BATCH_JOB_QUEUE_NAME is required}"
+        : "${BATCH_JOB_DEFINITION_NAME:?BATCH_JOB_DEFINITION_NAME is required}"
+        : "${BATCH_TASK_EXECUTION_ROLE_ARN:?BATCH_TASK_EXECUTION_ROLE_ARN is required}"
+        : "${BATCH_LOG_GROUP_NAME:?BATCH_LOG_GROUP_NAME is required}"
+      - export RELEASE_ID="build-${CODEBUILD_BUILD_NUMBER:-$(date +%s)}"
+      - export IMAGE_URI="$ECR_REPOSITORY_URI:$RELEASE_ID"
+      - export ECR_REGISTRY="$(printf '%s' "$ECR_REPOSITORY_URI" | cut -d/ -f1)"
+      - echo "Building Batch image $IMAGE_URI"
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" --endpoint-url "$AWS_ENDPOINT_URL" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+  build:
+    commands:
+      - set -euo pipefail
+      - cd "$CODEBUILD_SRC_DIR/targets/batch/app"
+      - mvn -B clean test
+      - mvn -B package -DskipTests
+      - docker build --pull=false --build-arg APP_VERSION="$RELEASE_ID" --tag "$IMAGE_URI" .
+      - docker push "$IMAGE_URI"
+      - cd "$CODEBUILD_SRC_DIR"
+      - |-
+        CONTAINER_PROPERTIES="$(IMAGE_URI="$IMAGE_URI" BATCH_TASK_EXECUTION_ROLE_ARN="$BATCH_TASK_EXECUTION_ROLE_ARN" BATCH_LOG_GROUP_NAME="$BATCH_LOG_GROUP_NAME" AWS_DEFAULT_REGION="$AWS_DEFAULT_REGION" python3 -c 'import json, os; print(json.dumps({"image": os.environ["IMAGE_URI"], "resourceRequirements": [{"type": "VCPU", "value": "0.25"}, {"type": "MEMORY", "value": "512"}], "command": ["java", "-jar", "/app/app.jar"], "networkConfiguration": {"assignPublicIp": "ENABLED"}, "executionRoleArn": os.environ["BATCH_TASK_EXECUTION_ROLE_ARN"], "logConfiguration": {"logDriver": "awslogs", "options": {"awslogs-group": os.environ["BATCH_LOG_GROUP_NAME"], "awslogs-region": os.environ["AWS_DEFAULT_REGION"], "awslogs-stream-prefix": "batch"}}}, separators=(",", ":")))')"
+        aws batch register-job-definition --job-definition-name "$BATCH_JOB_DEFINITION_NAME" --type container --platform-capabilities FARGATE --container-properties "$CONTAINER_PROPERTIES" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" > "$CODEBUILD_SRC_DIR/job-definition-registered.json"
+        export JOB_DEFINITION_ARN="$(JOB_DEFINITION_RESPONSE="$(cat "$CODEBUILD_SRC_DIR/job-definition-registered.json")" python3 -c 'import json, os; print(json.loads(os.environ["JOB_DEFINITION_RESPONSE"])["jobDefinitionArn"])')"
+        SUBMIT_RESPONSE="$(aws batch submit-job --job-name "$RELEASE_ID" --job-queue "$BATCH_JOB_QUEUE_NAME" --job-definition "$JOB_DEFINITION_ARN" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION")"
+        printf '%s\n' "$SUBMIT_RESPONSE" > "$CODEBUILD_SRC_DIR/job-submitted.json"
+        export JOB_ID="$(SUBMIT_RESPONSE="$SUBMIT_RESPONSE" python3 -c 'import json, os; print(json.loads(os.environ["SUBMIT_RESPONSE"])["jobId"])')"
+        echo "Submitted Batch job $JOB_ID using $JOB_DEFINITION_ARN"
+      - |-
+        export JOB_STATUS=""
+        export JOB_RESPONSE=""
+        export JOB_SUCCEEDED=false
+        for attempt in $(seq 1 120); do
+          if JOB_RESPONSE="$(aws batch describe-jobs --jobs "$JOB_ID" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" 2> "$CODEBUILD_SRC_DIR/batch-describe-error.log")"; then
+            printf '%s\n' "$JOB_RESPONSE" > "$CODEBUILD_SRC_DIR/batch-job-latest.json"
+            JOB_STATUS="$(JOB_RESPONSE="$JOB_RESPONSE" python3 -c 'import json, os; jobs=json.loads(os.environ["JOB_RESPONSE"]).get("jobs", []); print(jobs[0].get("status", "MISSING") if jobs else "MISSING")')"
+            echo "Batch job status: $JOB_STATUS (attempt $attempt/120)"
+            case "$JOB_STATUS" in
+              SUCCEEDED)
+                export JOB_SUCCEEDED=true
+                break
+                ;;
+              FAILED)
+                echo "Batch job failed before release validation:" >&2
+                cat "$CODEBUILD_SRC_DIR/batch-job-latest.json" >&2
+                exit 1
+                ;;
+              SUBMITTED|PENDING|RUNNABLE|STARTING|RUNNING)
+                ;;
+              *)
+                echo "Batch returned an unexpected job status: $JOB_STATUS" >&2
+                cat "$CODEBUILD_SRC_DIR/batch-job-latest.json" >&2
+                exit 1
+                ;;
+            esac
+          fi
+          if [ "$attempt" -lt 120 ]; then
+            sleep 1
+          fi
+        done
+        if [ "$JOB_SUCCEEDED" != true ]; then
+          echo "Batch job did not reach SUCCEEDED before the 120-second deadline." >&2
+          if [ -f "$CODEBUILD_SRC_DIR/batch-describe-error.log" ]; then cat "$CODEBUILD_SRC_DIR/batch-describe-error.log" >&2; fi
+          if [ -f "$CODEBUILD_SRC_DIR/batch-job-latest.json" ]; then cat "$CODEBUILD_SRC_DIR/batch-job-latest.json" >&2; fi
+          exit 1
+        fi
+      - |-
+        LOG_STREAM_NAME="$(JOB_RESPONSE="$JOB_RESPONSE" python3 -c 'import json, os; jobs=json.loads(os.environ["JOB_RESPONSE"]).get("jobs", []); print((jobs[0].get("container") or {}).get("logStreamName", "") if jobs else "")')"
+        export LOG_VALIDATION=false
+        export LOG_RESPONSE=""
+        for attempt in $(seq 1 30); do
+          if [ -n "$LOG_STREAM_NAME" ]; then
+            if LOG_RESPONSE="$(aws logs get-log-events --log-group-name "$BATCH_LOG_GROUP_NAME" --log-stream-name "$LOG_STREAM_NAME" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" 2>/dev/null)"; then
+              :
+            else
+              LOG_RESPONSE="{}"
+            fi
+          else
+            if LOG_RESPONSE="$(aws logs filter-log-events --log-group-name "$BATCH_LOG_GROUP_NAME" --filter-pattern "$RELEASE_ID" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" 2>/dev/null)"; then
+              :
+            else
+              LOG_RESPONSE="{}"
+            fi
+          fi
+          printf '%s\n' "$LOG_RESPONSE" > "$CODEBUILD_SRC_DIR/batch-log-events.json"
+          if EXPECTED_RELEASE="$RELEASE_ID" LOG_RESPONSE="$LOG_RESPONSE" python3 -c 'import json, os, sys; data=json.loads(os.environ["LOG_RESPONSE"]); expected={"service":"shipstack", "target":"batch", "release":os.environ["EXPECTED_RELEASE"]}; candidates=[json.loads(event.get("message", "").strip()) for event in data.get("events", []) if event.get("message", "").lstrip().startswith("{")]; valid=next((candidate for candidate in candidates if all(candidate.get(key) == value for key, value in expected.items())), None); print(json.dumps(valid, ensure_ascii=False) if valid else ""); sys.exit(0 if valid else 1)'; then
+            export LOG_VALIDATION=true
+            echo "Batch job output validated on log attempt $attempt"
+            break
+          fi
+          if [ "$attempt" -lt 30 ]; then sleep 1; fi
+        done
+        if [ "$LOG_VALIDATION" != true ]; then
+          echo "Batch job succeeded, but expected release output was not found in CloudWatch Logs." >&2
+          cat "$CODEBUILD_SRC_DIR/batch-job-latest.json" >&2
+          cat "$CODEBUILD_SRC_DIR/batch-log-events.json" >&2
+          exit 1
+        fi
+      - printf '{"service":"shipstack","target":"batch","release":"%s","jobStatus":"%s","outputValidation":"PASS"}\n' "$RELEASE_ID" "$JOB_STATUS" > "$CODEBUILD_SRC_DIR/batch-validation.json"
+      - cat "$CODEBUILD_SRC_DIR/batch-validation.json"
+  post_build:
+    commands:
+      - set -euo pipefail
+      - 'if [ "${CODEBUILD_BUILD_SUCCEEDING:-0}" != "1" ]; then echo "AWS Batch workflow failed before validation completed." >&2; exit 1; fi'
+      - 'echo "AWS Batch job submission and release validation completed: $RELEASE_ID"'
+
+artifacts:
+  files:
+    - job-definition-registered.json
+    - job-submitted.json
+    - batch-job-latest.json
+    - batch-log-events.json
+    - batch-validation.json
