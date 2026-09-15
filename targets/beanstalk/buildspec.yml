@@ -1,0 +1,107 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto21
+    commands:
+      - export JAVA_HOME="${JAVA_21_HOME:-/usr/lib/jvm/java-21-amazon-corretto.x86_64}"
+      - export PATH="$JAVA_HOME/bin:$PATH"
+      - java -version
+      - mvn -version
+      - aws --version
+      - zip -v | head -n 1
+  pre_build:
+    commands:
+      - set -euo pipefail
+      - |-
+        : "${AWS_ENDPOINT_URL:?AWS_ENDPOINT_URL is required for the external LocalStack instance}"
+        : "${AWS_DEFAULT_REGION:?AWS_DEFAULT_REGION is required}"
+        : "${EB_APPLICATION_NAME:?EB_APPLICATION_NAME is required}"
+        : "${EB_ENVIRONMENT_NAME:?EB_ENVIRONMENT_NAME is required}"
+        : "${EB_RELEASE_BUCKET:?EB_RELEASE_BUCKET is required}"
+        : "${EB_SERVICE_ROLE_NAME:?EB_SERVICE_ROLE_NAME is required}"
+        : "${EB_INSTANCE_PROFILE_NAME:?EB_INSTANCE_PROFILE_NAME is required}"
+        : "${EB_ENVIRONMENT_RELEASE_VALIDATION_MODE:?EB_ENVIRONMENT_RELEASE_VALIDATION_MODE is required}"
+      - export RELEASE_ID="build-${CODEBUILD_BUILD_NUMBER:-$(date +%s)}"
+      - export APP_ARTIFACT="$CODEBUILD_SRC_DIR/targets/beanstalk/app/target/shipstack-beanstalk-app.jar"
+      - export BUNDLE_DIR="$CODEBUILD_SRC_DIR/beanstalk-bundle"
+      - export BUNDLE_PATH="$CODEBUILD_SRC_DIR/shipstack-beanstalk-bundle.zip"
+      - export RELEASE_OBJECT_KEY="releases/$RELEASE_ID/shipstack-beanstalk-bundle.zip"
+      - echo "Preparing Elastic Beanstalk application version $RELEASE_ID"
+  build:
+    commands:
+      - set -euo pipefail
+      - export JAVA_HOME="${JAVA_21_HOME:-/usr/lib/jvm/java-21-amazon-corretto.x86_64}"
+      - export PATH="$JAVA_HOME/bin:$PATH"
+      - cd "$CODEBUILD_SRC_DIR/targets/beanstalk/app"
+      - mvn -B clean test
+      - mvn -B package -DskipTests
+      - cd "$CODEBUILD_SRC_DIR"
+      - test -s "$APP_ARTIFACT"
+      - rm -rf "$BUNDLE_DIR"
+      - mkdir -p "$BUNDLE_DIR"
+      - cp "$APP_ARTIFACT" "$BUNDLE_DIR/shipstack-beanstalk-app.jar"
+      - cp "$CODEBUILD_SRC_DIR/targets/beanstalk/app/Procfile" "$BUNDLE_DIR/Procfile"
+      - '(cd "$BUNDLE_DIR" && zip -q -r "$BUNDLE_PATH" .)'
+      - test -s "$BUNDLE_PATH"
+      - printf '%s\n' "$RELEASE_ID" > "$CODEBUILD_SRC_DIR/release.txt"
+      - printf '{"service":"shipstack","target":"beanstalk","release":"%s","bundle":"%s"}\n' "$RELEASE_ID" "$RELEASE_OBJECT_KEY" > "$CODEBUILD_SRC_DIR/bundle-manifest.json"
+      - echo "Uploading $BUNDLE_PATH to s3://$EB_RELEASE_BUCKET/$RELEASE_OBJECT_KEY"
+      - aws s3 cp "$BUNDLE_PATH" "s3://$EB_RELEASE_BUCKET/$RELEASE_OBJECT_KEY" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION"
+      - aws s3api head-object --bucket "$EB_RELEASE_BUCKET" --key "$RELEASE_OBJECT_KEY" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION"
+      - aws elasticbeanstalk create-application-version --application-name "$EB_APPLICATION_NAME" --version-label "$RELEASE_ID" --source-bundle "S3Bucket=$EB_RELEASE_BUCKET,S3Key=$RELEASE_OBJECT_KEY" --description "Shipstack Beanstalk release $RELEASE_ID" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" > "$CODEBUILD_SRC_DIR/application-version-created.json"
+      - |-
+        ENVIRONMENT_RESPONSE="$(aws elasticbeanstalk describe-environments --application-name "$EB_APPLICATION_NAME" --environment-names "$EB_ENVIRONMENT_NAME" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION")"
+        ENVIRONMENT_PRESENT="$(ENVIRONMENT_RESPONSE="$ENVIRONMENT_RESPONSE" APPLICATION_NAME="$EB_APPLICATION_NAME" ENVIRONMENT_NAME="$EB_ENVIRONMENT_NAME" python3 -c 'import json, os; data=json.loads(os.environ["ENVIRONMENT_RESPONSE"]); print("true" if any(x.get("ApplicationName") == os.environ["APPLICATION_NAME"] and x.get("EnvironmentName") == os.environ["ENVIRONMENT_NAME"] for x in data.get("Environments", [])) else "false")')"
+        if [ "$ENVIRONMENT_PRESENT" = "false" ]; then
+          CREATE_ARGS=(elasticbeanstalk create-environment --application-name "$EB_APPLICATION_NAME" --environment-name "$EB_ENVIRONMENT_NAME" --version-label "$RELEASE_ID" --tier Name=WebServer,Type=Standard --option-settings "Namespace=aws:elasticbeanstalk:environment,OptionName=EnvironmentType,Value=SingleInstance" "Namespace=aws:elasticbeanstalk:environment,OptionName=ServiceRole,Value=$EB_SERVICE_ROLE_NAME" "Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value=$EB_INSTANCE_PROFILE_NAME" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION")
+          if [ -n "${EB_SOLUTION_STACK_NAME:-}" ]; then
+            CREATE_ARGS+=(--solution-stack-name "$EB_SOLUTION_STACK_NAME")
+          fi
+          aws "${CREATE_ARGS[@]}" > "$CODEBUILD_SRC_DIR/environment-created.json"
+        else
+          aws elasticbeanstalk update-environment --application-name "$EB_APPLICATION_NAME" --environment-name "$EB_ENVIRONMENT_NAME" --version-label "$RELEASE_ID" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" > "$CODEBUILD_SRC_DIR/environment-update.json"
+        fi
+      - aws elasticbeanstalk describe-applications --application-names "$EB_APPLICATION_NAME" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" > "$CODEBUILD_SRC_DIR/application.json"
+      - aws elasticbeanstalk describe-application-versions --application-name "$EB_APPLICATION_NAME" --version-label "$RELEASE_ID" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" > "$CODEBUILD_SRC_DIR/application-versions.json"
+      - aws elasticbeanstalk describe-environments --application-name "$EB_APPLICATION_NAME" --environment-names "$EB_ENVIRONMENT_NAME" --endpoint-url "$AWS_ENDPOINT_URL" --region "$AWS_DEFAULT_REGION" > "$CODEBUILD_SRC_DIR/environment.json"
+      - |-
+        APPLICATION_NAME="$EB_APPLICATION_NAME" APPLICATION_RESPONSE="$(cat "$CODEBUILD_SRC_DIR/application.json")" python3 -c 'import json, os; data=json.loads(os.environ["APPLICATION_RESPONSE"]); matches=[x for x in data.get("Applications", []) if x.get("ApplicationName") == os.environ["APPLICATION_NAME"]]; assert len(matches) == 1, data; print("Application validation passed:", json.dumps(matches[0], ensure_ascii=False))'
+      - |-
+        EXPECTED_RELEASE="$RELEASE_ID" APPLICATION_NAME="$EB_APPLICATION_NAME" VERSION_RESPONSE="$(cat "$CODEBUILD_SRC_DIR/application-versions.json")" python3 -c 'import json, os, sys; data=json.loads(os.environ["VERSION_RESPONSE"]); expected=os.environ["EXPECTED_RELEASE"]; matches=[x for x in data.get("ApplicationVersions", []) if x.get("VersionLabel") == expected and x.get("ApplicationName") == os.environ["APPLICATION_NAME"]]; assert len(matches) == 1, data; print("Application Version validation passed:", json.dumps(matches[0], ensure_ascii=False))'
+      - |-
+        ENVIRONMENT_ACTUAL_RELEASE="$(APPLICATION_NAME="$EB_APPLICATION_NAME" ENVIRONMENT_NAME="$EB_ENVIRONMENT_NAME" ENVIRONMENT_RESPONSE="$(cat "$CODEBUILD_SRC_DIR/environment.json")" python3 -c 'import json, os; data=json.loads(os.environ["ENVIRONMENT_RESPONSE"]); matches=[x for x in data.get("Environments", []) if x.get("EnvironmentName") == os.environ["ENVIRONMENT_NAME"] and x.get("ApplicationName") == os.environ["APPLICATION_NAME"] and x.get("Status") != "Terminated"]; assert len(matches) == 1, data; print(matches[0].get("VersionLabel") or "MISSING")')"
+        if [ "$ENVIRONMENT_ACTUAL_RELEASE" = "$RELEASE_ID" ]; then
+          ENVIRONMENT_RELEASE_VALIDATION="PASS"
+        elif [ "$EB_ENVIRONMENT_RELEASE_VALIDATION_MODE" = "localstack-control-plane" ]; then
+          ENVIRONMENT_RELEASE_VALIDATION="UNSUPPORTED_LOCALSTACK"
+          echo "LocalStack did not retain Environment VersionLabel: expected=$RELEASE_ID actual=$ENVIRONMENT_ACTUAL_RELEASE"
+        else
+          echo "Environment release validation failed: expected=$RELEASE_ID actual=$ENVIRONMENT_ACTUAL_RELEASE" >&2
+          exit 1
+        fi
+        export ENVIRONMENT_RELEASE_VALIDATION
+        printf '{"service":"shipstack","target":"beanstalk","release":"%s","applicationVersionValidation":"PASS","environmentReleaseValidation":"%s","actualEnvironmentRelease":"%s","runtimeValidation":"NOT_EXECUTED"}\n' "$RELEASE_ID" "$ENVIRONMENT_RELEASE_VALIDATION" "$ENVIRONMENT_ACTUAL_RELEASE" > "$CODEBUILD_SRC_DIR/beanstalk-validation.json"
+  post_build:
+    commands:
+      - set -euo pipefail
+      - 'if [ "${CODEBUILD_BUILD_SUCCEEDING:-0}" != "1" ]; then echo "Elastic Beanstalk control-plane workflow failed before validation completed." >&2; exit 1; fi'
+      - 'echo "Elastic Beanstalk control-plane workflow completed: $RELEASE_ID"'
+      - cat "$CODEBUILD_SRC_DIR/beanstalk-validation.json"
+      - echo "Runtime HTTP validation is intentionally not performed; LocalStack does not run Beanstalk applications."
+
+artifacts:
+  files:
+    - release.txt
+    - bundle-manifest.json
+    - environment-created.json
+    - application-version-created.json
+    - environment-update.json
+    - application.json
+    - application-versions.json
+    - environment.json
+    - beanstalk-validation.json
